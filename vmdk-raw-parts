@@ -3,6 +3,7 @@ import errno
 import math
 import os
 from optparse import OptionParser
+import pipes
 import random
 import re
 import string
@@ -127,14 +128,32 @@ class PartitionedVMDK(object):
         if os.getuid() == 0:
             olduid = os.environ['SUDO_UID']
             if olduid:
-                os.setuid(int(olduid))
+                olduid = int(olduid)
+                oldgid = int(os.environ['SUDO_GID'])
+                os.setgroups([])
+                os.setgid(oldgid)
+                os.setuid(olduid)
     
     def writefile(self, dir, name, contents):
         f = open(os.path.join(dir, name), 'w')
         f.write(contents)
         f.close()
     
-    def write(self, dir, wantparts, active = None):
+    def write_script(self, dir, args):
+        if args == None:
+            return
+        
+        script = "#!/bin/sh\ncd $parent\n$sudo $command $args\n"
+        script = string.Template(script).substitute(
+            parent = pipes.quote(os.path.realpath(os.path.dirname(dir))),
+            command = pipes.quote(os.path.realpath(__file__)),
+            args = str.join(' ', [pipes.quote(a) for a in args]),
+            sudo = ('' if os.access(self.diskpath, os.R_OK) else 'sudo'))
+        name = 'regen.sh'
+        self.writefile(dir, name, script)
+        os.chmod(os.path.join(dir, name), 0770)
+    
+    def write(self, dir, wantparts, active = None, args = None):
         wanted = self.wanted(wantparts)
         if active:
             active_gpt = self.find_part(active)
@@ -158,6 +177,7 @@ class PartitionedVMDK(object):
                 Partitioning.BLOCK)
             self.writefile(dir, 'gpt_entries', entries)
         self.writefile(dir, '%s.vmdk' % dir, self.vmdk(wanted))
+        self.write_script(dir, args)
     
     def find_part(self, key):
         parts = self.diskparts.parts()
@@ -251,13 +271,14 @@ $extents
             extents = extents)
 
 if __name__ == "__main__":
+    orig_args = sys.argv[1:]    
     parser = OptionParser()
     parser.add_option('-b', '--boot', dest = "boot")
     parser.add_option('-p', '--platform', dest = "platform")
-    (options, args) = parser.parse_args(sys.argv[1:])
+    (options, args) = parser.parse_args(orig_args)
     disk = args.pop(0)
     dest = args.pop(0)
     parts = args
     
     vmdk = PartitionedVMDK(disk, platform = options.platform)
-    vmdk.write(dest, parts, options.boot)
+    vmdk.write(dest, parts, active = options.boot, args = orig_args)
