@@ -253,8 +253,7 @@ class PartitionedVMDK(object):
         return str.join("\n", exts)
     
     def vmdk(self, wanted):
-        template = """
-# Disk DescriptorFile
+        template = """# Disk DescriptorFile
 version=1
 encoding="UTF-8"
 CID=$cid
