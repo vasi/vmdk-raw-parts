@@ -101,6 +101,7 @@ class Partitioning(object):
                 struct.unpack_from('<8sL20xQ40xLL', gpt_header)
             if sig != Partitioning.GPT_SIGNATURE or \
                     vers != Partitioning.GPT_VERSION:
+                self.gpt_parts = None
                 return
             self.gpt_header = gpt_header
             
