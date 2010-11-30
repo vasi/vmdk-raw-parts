@@ -253,6 +253,7 @@ class PartitionedVMDK(object):
         return str.join("\n", exts)
     
     def vmdk(self, wanted):
+    	# Need something in DDB or VBox complains
         template = """# Disk DescriptorFile
 version=1
 encoding="UTF-8"
@@ -263,6 +264,8 @@ createType="partitionedDevice"
 
 # Extent description
 $extents
+
+ddb.virtualHWVersion = "4"
 """
         cid = "%08x" % random.randint(0, 2**32 - 1)
         extents = self.extents(wanted)
