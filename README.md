@@ -23,11 +23,11 @@ Usage
 
 `vmdk-raw-parts [options] DEVICE OUTPUT [PART1 ...]`
 
-`DEVICE` is the physical disk whose partitions should be exposed. It should be a partitioned device, not an individual partitions: specify /dev/sda or /dev/disk0, *not* /dev/sda1 or /dev/disk0s1.
+_DEVICE_ is the physical disk whose partitions should be exposed. It should be a partitioned device, not an individual partitions: specify /dev/sda or /dev/disk0, *not* /dev/sda1 or /dev/disk0s1.
 
-The `OUTPUT` will be a directory containing a VMDK file, as well as one or more auxiliary files. Do not remove the auxiliary files or the virtual disk will no longer work! Also in the output directory is a 'regen.sh' file, which you can run to regenerate the virtual disk if the partition table ever changes.
+The _OUTPUT_ will be a directory containing a VMDK file, as well as one or more auxiliary files. Do not remove the auxiliary files or the virtual disk will no longer work! Also in the output directory is a 'regen.sh' file, which you can run to regenerate the virtual disk if the partition table ever changes.
 
-The partitions to expose (`PART1`...) may be specified as integers or as names. Partitions are numbered starting with '1'. Names only work with GPT partitions, MBR partitions are unnamed.
+The partitions to expose (_PART1_...) may be specified as integers or as names. Partitions are numbered starting with '1'. Names only work with GPT partitions, MBR partitions are unnamed.
 
 Supported options are:
 
@@ -48,11 +48,11 @@ Patches welcome!
 * Logical/extended MBR partitions are not supported.
 * The GPT checksum is not examined, so garbage GPT partitioning will yield a garbage VMDK.
 * The resulting VMDKs will not work under Windows, though it should be faily easy to modify them for that purpose.
-* In common with other solutions, things are likely to break when you change how your disk is partitioned, even if all the exposed partitions remain the same. But you can run the 'regen.sh' command inside the virtual disk to regenerate it easily.
+* In common with other solutions, things are likely to break when you change how your disk is partitioned, even if all the exposed partitions remain the same. But you can run the *regen.sh* command inside the virtual disk to regenerate it easily.
 
 Alternatives
 ------------
 
-* VMWare and Parallels products for the Mac will automagically make Windows "Boot Camp" partitions available in a VM.
-* VMWare Fusion includes a 'vmware-rawDiskCreator' program. It only works with MBR partitions, though it can understand partitions that are in the MBR part of a hybrid GPT. It also can only expose one partition in the disk.
-* VirtualBox includes a hidden command 'VBoxManage internalcommands createrawvmdk'. It also only understands MBR partitions.
+* VMWare and Parallels products for the Mac will automagically make Windows _Boot Camp_ partitions available in a VM.
+* VMWare Fusion includes a _vmware-rawDiskCreator_ program. It only works with MBR partitions, though it can understand partitions that are in the MBR part of a hybrid GPT. It also can only expose one partition in the disk.
+* VirtualBox includes a hidden command _VBoxManage internalcommands createrawvmdk_. It also only understands MBR partitions.
