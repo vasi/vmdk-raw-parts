@@ -23,7 +23,7 @@ Usage
 
 `vmdk-raw-parts [options] DEVICE OUTPUT [PART1 ...]`
 
-`DEVICE` is the physical disk whose partitions should be exposed. It should be a partitioned device, not an individual partitions: specify `/dev/sda` or `/dev/disk0`, *not* `/dev/sda1` or `/dev/disk0s1`.
+`DEVICE` is the physical disk whose partitions should be exposed. It should be a partitioned device, not an individual partitions: specify /dev/sda or /dev/disk0, *not* /dev/sda1 or /dev/disk0s1.
 
 The `OUTPUT` will be a directory containing a VMDK file, as well as one or more auxiliary files. Do not remove the auxiliary files or the virtual disk will no longer work! Also in the output directory is a 'regen.sh' file, which you can run to regenerate the virtual disk if the partition table ever changes.
 
