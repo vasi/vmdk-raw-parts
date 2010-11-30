@@ -37,6 +37,7 @@ Patches welcome!
 
 * Generally under-tested, demons may fly out of your nose!
 * Logical/extended MBR partitions are not supported.
+* The GPT checksum is not examined, so garbage GPT partitioning will yield a garbage VMDK.
 * The resulting VMDKs will not work under Windows, though it should be faily easy to modify them for that purpose.
 * In common with other solutions, things are likely to break when you change how your disk is partitioned, even if all the exposed partitions remain the same. But you can run the 'regen.sh' command inside the virtual disk to regenerate it easily.
 
