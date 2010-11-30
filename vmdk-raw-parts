@@ -118,11 +118,11 @@ class PartitionedVMDK(object):
         pass
     
     def __init__(self, diskpath, platform = None):
-        self.diskpath = diskpath
+        self.diskpath = os.path.realpath(diskpath)
         self.platform = platform
         if platform == None:
             self.platform = sys.platform
-        self.diskparts = Partitioning(diskpath)
+        self.diskparts = Partitioning(self.diskpath)
         self.drop_privileges()
     
     def drop_privileges(self):
@@ -276,7 +276,7 @@ ddb.virtualHWVersion = "4"
 if __name__ == "__main__":
     orig_args = sys.argv[1:]    
     parser = OptionParser(
-    	usage = 'Usage: %prog [options] DEVICE OUTPUT [PARTNUM1 ...]',
+    	usage = 'Usage: %prog [options] DEVICE OUTPUT [PART1 ...]',
     	description =
 """Creates a virtual disk that exposes to one or more partitions of
 a physical device to the VM.
@@ -284,8 +284,8 @@ a physical device to the VM.
 The DEVICE must have an MBR or GPT partition table. On successful exit,
 OUTPUT will be a directory containing a VMDK disk and support files,
 which should work in either VMWare or VirtualBox. The partitions to
-expose are specified by integers, starting at one.""")
-    parser.add_option('-b', '--boot', metavar = 'PARTNUM', dest = "boot",
+expose are specified by integers, starting at one; or by name.""")
+    parser.add_option('-b', '--boot', metavar = 'PART', dest = "boot",
     	help = "Make this partition bootable")
     parser.add_option('-p', '--platform', dest = "platform",
     	help = "Target the given platform (darwin or linux)")
