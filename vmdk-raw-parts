@@ -177,7 +177,8 @@ class PartitionedVMDK(object):
             entries = entries.ljust(self.gpt_entries_blocks() *
                 Partitioning.BLOCK)
             self.writefile(dir, 'gpt_entries', entries)
-        self.writefile(dir, '%s.vmdk' % dir, self.vmdk(wanted))
+        base = os.path.basename(dir)
+        self.writefile(dir, '%s.vmdk' % base, self.vmdk(wanted))
         self.write_script(dir, args)
     
     def find_part(self, key):
