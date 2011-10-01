@@ -203,7 +203,8 @@ class PartitionedVMDK(object):
         return int(math.ceil(size / float(Partitioning.BLOCK)))
     
     def macpart(self, partnum):
-        return re.sub(r'/rdisk(\d+)$', r'/disk\1s' + str(partnum), self.diskpath)
+        return re.sub(r'/(r?)disk(\d+)$', r'/\1disk\2s' + str(partnum),
+            self.diskpath)
     
     def extent(self, elist, size, partnum = None, offset = None, name = None):
         if name:
