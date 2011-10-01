@@ -292,6 +292,9 @@ expose are specified by integers, starting at one; or by name.""")
     parser.add_option('-p', '--platform', dest = "platform",
     	help = "Target the given platform (darwin or linux)")
     (options, args) = parser.parse_args(orig_args)
+    if len(args) < 2:
+        parser.print_help()
+        sys.exit(-1)
     disk = args.pop(0)
     dest = args.pop(0)
     parts = args
