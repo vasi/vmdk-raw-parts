@@ -248,7 +248,7 @@ class PartitionedVMDK(object):
                     break
         
         if self.diskparts.is_gpt():
-            alt = self.diskparts.gpt_alternate_lba
+            alt = self.diskparts.gpt_alternate_lba - self.gpt_entries_blocks()
             if alt > pos:
                 self.extent(exts, alt - pos)
             self.extent(exts, self.gpt_entries_blocks(), name = 'gpt_entries')
