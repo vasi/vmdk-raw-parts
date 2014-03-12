@@ -127,7 +127,7 @@ class PartitionedVMDK(object):
     
     def drop_privileges(self):
         if os.getuid() == 0:
-            olduid = os.environ['SUDO_UID']
+            olduid = os.environ.get('SUDO_UID')
             if olduid:
                 olduid = int(olduid)
                 oldgid = int(os.environ['SUDO_GID'])
