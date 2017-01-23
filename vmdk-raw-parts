@@ -71,7 +71,7 @@ class Partitioning(object):
                 ) % self.__dict__
 
     def dump(self):
-        parts = self.mbr_parts
+        parts = list(self.mbr_parts)
         if self.is_gpt():
             parts += self.gpt_parts
         for p in parts:
