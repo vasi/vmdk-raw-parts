@@ -51,12 +51,19 @@ class Partitioning(object):
             self.num, self.data = num, data
             status, self.type, offset, size = \
                 struct.unpack('<B3xB3xLL', data)
-            if not self.valid():
-                return
             self.offset, self.size = offset, size
             self.active = (status == 0x80)
+            if not self.valid():
+                return
         def valid(self):
             return self.type != 0
+        def extended(self):
+            return self.type in (0x05, 0x0f, 0x85)
+        def ebr(self, offset, data, num):
+            self.ebr_offset = offset
+            self.ebr_data = data
+            self.offset += offset
+            self.num = num
         def __str__(self):
             return ('<MBRPart num=%(num)d active=%(active)-5s ' +
                 'type=%(type)02x offset=%(offset)d size=%(size)d>'
@@ -119,6 +126,39 @@ class Partitioning(object):
             buf[off] = struct.pack('B', 0x80 if i == active else 0)
         return str(buf)
 
+    def mbr_raw(self, data):
+        for i in xrange(0, 4):
+            off = Partitioning.MBR_PARTS_OFFSET + 16 * i
+            yield Partitioning.MBRPart(i, data[off:off+16])
+
+    def mbr_read(self, disk):
+        self.mbr_parts = []
+
+        ext = None
+        for p in self.mbr_raw(self.mbr):
+            if p.extended():
+                ext = p.offset
+            elif p.valid():
+                self.mbr_parts.append(p)
+
+        n = 5
+        while ext:
+            disk.seek(ext * Partitioning.BLOCK)
+            data = disk.read(Partitioning.BLOCK)
+            parts = list(self.mbr_raw(data))
+            if parts[2].type != 0 or parts[3].type != 0:
+                raise FormatError()
+
+            parts[0].ebr(ext, data, n)
+            self.mbr_parts.append(parts[0])
+
+            if parts[1].type == 0:
+                break
+            ext += parts[1].offset
+            n += 1
+
+        disk.seek(1)
+
     def __init__(self, diskpath):
         disk = open(diskpath)
         try:
@@ -126,11 +166,7 @@ class Partitioning(object):
             if self.mbr[510:512] != "\x55\xAA":
                 raise FormatError()
 
-            self.mbr_parts = []
-            for i in xrange(0, 4):
-                off = Partitioning.MBR_PARTS_OFFSET + 16 * i
-                self.mbr_parts.append(Partitioning.MBRPart(i,
-                    self.mbr[off:off+16]))
+            self.mbr_read(disk)
 
             self.gpt_parts = []
             gpt_header = disk.read(Partitioning.BLOCK)
@@ -217,14 +253,14 @@ class PartitionedVMDK(object):
 
     def find_part(self, key):
         parts = self.diskparts.parts()
+        prop = 'name'
         try:
             key = int(key)
-            return parts[key - 1]
-        except:
-            ps = [p for p in parts if p.name == key]
-            if len(ps) != 1:
-                raise PartSpecError(key)
-            return ps[0]
+            prop = 'num'
+        except ValueError: # Not an integer
+            pass
+
+        return next(p for p in parts if getattr(p, prop, None) == key)
 
     # return an ordered list of numbers of desired partitions
     def wanted(self, want):
@@ -302,6 +338,8 @@ expose are specified by integers, starting at one; or by name.""")
     	help = "Make this partition bootable")
     parser.add_option('-p', '--platform', dest = "platform",
     	help = "Target the given platform (darwin or linux)")
+    parser.add_option('-v', '--verbose', dest = "verbose",
+    	help = "Dump the partition table as we run", action = 'store_true')
     (options, args) = parser.parse_args(orig_args)
     if len(args) < 2:
         parser.print_help()
@@ -311,4 +349,6 @@ expose are specified by integers, starting at one; or by name.""")
     parts = args
 
     vmdk = PartitionedVMDK(disk, platform = options.platform)
+    if options.verbose:
+        vmdk.diskparts.dump()
     vmdk.write(dest, parts, active = options.boot, args = orig_args)
