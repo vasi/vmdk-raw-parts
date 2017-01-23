@@ -94,6 +94,9 @@ class Partitioning(object):
                 self.gpt_entries())
 
         for part in self.parts():
+            if getattr(part, 'ebr_offset', None):
+                yield ContentExtent(part.ebr_offset, 1, 'ebr' + str(part.num),
+                    part.ebr_data)
             yield PartExtent(part.offset, part.size, part.num)
 
         if self.is_gpt():
@@ -141,23 +144,25 @@ class Partitioning(object):
             elif p.valid():
                 self.mbr_parts.append(p)
 
-        n = 5
-        while ext:
-            disk.seek(ext * Partitioning.BLOCK)
-            data = disk.read(Partitioning.BLOCK)
-            parts = list(self.mbr_raw(data))
-            if parts[2].type != 0 or parts[3].type != 0:
-                raise FormatError()
+        if ext:
+            pos = ext
+            n = 5
+            while True:
+                disk.seek(pos * Partitioning.BLOCK)
+                data = disk.read(Partitioning.BLOCK)
+                parts = list(self.mbr_raw(data))
+                if parts[2].type != 0 or parts[3].type != 0:
+                    raise FormatError()
 
-            parts[0].ebr(ext, data, n)
-            self.mbr_parts.append(parts[0])
+                parts[0].ebr(pos, data, n)
+                self.mbr_parts.append(parts[0])
+                print parts[0]
 
-            if parts[1].type == 0:
-                break
-            ext += parts[1].offset
-            n += 1
-
-        disk.seek(1)
+                if parts[1].type == 0:
+                    break
+                pos = ext + parts[1].offset
+                n += 1
+            disk.seek(1)
 
     def __init__(self, diskpath):
         disk = open(diskpath)
@@ -248,6 +253,7 @@ class PartitionedVMDK(object):
                 self.writefile(dir, ext.name, contents)
 
         base = os.path.basename(dir)
+        base, _ = os.path.splitext(base)
         self.writefile(dir, '%s.vmdk' % base, self.vmdk(wanted))
         self.write_script(dir, args)
 
@@ -345,7 +351,7 @@ expose are specified by integers, starting at one; or by name.""")
         parser.print_help()
         sys.exit(-1)
     disk = args.pop(0)
-    dest = args.pop(0)
+    dest = os.path.normpath(args.pop(0))
     parts = args
 
     vmdk = PartitionedVMDK(disk, platform = options.platform)
