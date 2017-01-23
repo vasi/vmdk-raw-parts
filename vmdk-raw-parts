@@ -129,7 +129,7 @@ class Partitioning(object):
     def mbr_raw(self, data):
         for i in xrange(0, 4):
             off = Partitioning.MBR_PARTS_OFFSET + 16 * i
-            yield Partitioning.MBRPart(i, data[off:off+16])
+            yield Partitioning.MBRPart(i + 1, data[off:off+16])
 
     def mbr_read(self, disk):
         self.mbr_parts = []
