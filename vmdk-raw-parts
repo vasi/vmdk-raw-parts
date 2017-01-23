@@ -192,9 +192,10 @@ class Partitioning(object):
                 return
 
             self.gpt_header = gpt_header
-
-            self.gpt_parts = [Partitioning.GPTPart(i, disk.read(psize))
-                for i in xrange(0, pcount)]
+            for i in xrange(0, pcount):
+                part = Partitioning.GPTPart(i + 1, disk.read(psize))
+                if part.valid():
+                    self.gpt_parts.append(part)
 
             disk.seek(self.gpt_alternate_lba * Partitioning.BLOCK)
             self.gpt_alternate = disk.read(Partitioning.BLOCK)
