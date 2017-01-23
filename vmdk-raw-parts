@@ -11,6 +11,7 @@ import struct
 import sys
 from UserString import MutableString
 from uuid import UUID
+from collections import namedtuple
 
 # Supports only GPT and MBR partitioning
 class Partitioning(object):
@@ -62,7 +63,10 @@ class Partitioning(object):
                 ) % self.__dict__
 
     def dump(self):
-        for p in self.mbr_parts + self.gpt_parts:
+        parts = self.mbr_parts
+        if self.is_gpt():
+            parts += self.gpt_parts
+        for p in parts:
             if p.valid():
                 print p
 
@@ -71,6 +75,39 @@ class Partitioning(object):
         if not parts:
             parts = getattr(self, 'mbr_parts')
         return [p for p in parts if p.valid()]
+
+    def extents(self):
+        ContentExtent = namedtuple('ContentExtent', 'offset size name contents')
+        PartExtent = namedtuple('PartExtent', 'offset size num')
+
+        yield ContentExtent(0, 1, 'mbr', self.mbr)
+        if self.is_gpt():
+            yield ContentExtent(1, 1, 'gpt_header', self.gpt_header)
+            yield ContentExtent(2, self.gpt_entries_blocks(), 'gpt_entries',
+                self.gpt_entries())
+
+        for part in self.parts():
+            yield PartExtent(part.offset, part.size, part.num)
+
+        if self.is_gpt():
+            alt = self.gpt_alternate_lba - self.gpt_entries_blocks()
+            yield ContentExtent(alt, self.gpt_entries_blocks(), 'gpt_entries',
+                None)
+            yield ContentExtent(self.gpt_alternate_lba, 1, 'gpt_alternate',
+                self.gpt_alternate)
+
+    def gpt_entries(self):
+        # pad entries to blocksize
+        entries = str.join('', [p.data for p in self.gpt_parts])
+        entries = entries.ljust(self.gpt_entries_blocks() *
+            Partitioning.BLOCK)
+        return entries
+
+    def gpt_entries_blocks(self):
+        parts = self.gpt_parts
+        psize = len(parts[0].data)
+        size = psize * len(parts)
+        return int(math.ceil(size / float(Partitioning.BLOCK)))
 
     def is_gpt(self):
         return getattr(self, 'gpt_parts') != None
@@ -123,7 +160,6 @@ class PartitionedVMDK(object):
         if platform == None:
             self.platform = sys.platform
         self.diskparts = Partitioning(self.diskpath)
-        self.diskparts.dump()
         self.drop_privileges()
 
     def drop_privileges(self):
@@ -168,16 +204,13 @@ class PartitionedVMDK(object):
             if e.errno != errno.EEXIST:
                 raise
 
-        self.writefile(dir, 'mbr', self.diskparts.mbr_activated(active))
+        for ext in self.diskparts.extents():
+            if getattr(ext, 'contents', None):
+                contents = ext.contents
+                if ext.name == 'mbr':
+                    contents = self.diskparts.mbr_activated(active)
+                self.writefile(dir, ext.name, contents)
 
-        if self.diskparts.is_gpt():
-            self.writefile(dir, 'gpt_header', self.diskparts.gpt_header)
-            self.writefile(dir, 'gpt_alternate', self.diskparts.gpt_alternate)
-            # pad entries to blocksize
-            entries = str.join('', [p.data for p in self.diskparts.gpt_parts])
-            entries = entries.ljust(self.gpt_entries_blocks() *
-                Partitioning.BLOCK)
-            self.writefile(dir, 'gpt_entries', entries)
         base = os.path.basename(dir)
         self.writefile(dir, '%s.vmdk' % base, self.vmdk(wanted))
         self.write_script(dir, args)
@@ -197,12 +230,6 @@ class PartitionedVMDK(object):
     def wanted(self, want):
         return sorted([self.find_part(w).num for w in want])
 
-    def gpt_entries_blocks(self):
-        parts = self.diskparts.gpt_parts
-        psize = len(parts[0].data)
-        size = psize * len(parts)
-        return int(math.ceil(size / float(Partitioning.BLOCK)))
-
     def macpart(self, partnum):
         return re.sub(r'/r?disk(\d+)$', r'/disk\1s' + str(partnum),
             self.diskpath)
@@ -220,41 +247,24 @@ class PartitionedVMDK(object):
         elist.append(ext)
 
     def extents(self, wanted):
-        parts = sorted(self.diskparts.parts(), key = lambda p: p.offset)
+        desc = []
+        exts = sorted(self.diskparts.extents(), key = lambda e: e.offset)
 
-        exts = []
-        self.extent(exts, 1, name = 'mbr')
-        pos = 1
-        if self.diskparts.is_gpt():
-            self.extent(exts, 1, name = 'gpt_header')
-            self.extent(exts, self.gpt_entries_blocks(), name = 'gpt_entries')
-            pos += 1 + self.gpt_entries_blocks()
+        pos = 0
+        for ext in exts:
+            if ext.offset > pos: # Add some zeros
+                self.extent(desc, ext.offset - pos)
 
-        pnum = 1
-        part = parts.pop(0)
-        while True:
-            if pos < part.offset:
-                self.extent(exts, part.offset - pos)
-                pos = part.offset
+            if hasattr(ext, 'name'):
+                self.extent(desc, ext.size, name = ext.name)
+            elif ext.num in wanted:
+                self.extent(desc, ext.size, offset = ext.offset,
+                    partnum = ext.num)
             else:
-                if part.num in wanted:
-                    self.extent(exts, part.size, pnum, pos)
-                else:
-                    self.extent(exts, part.size)
-                pos += part.size
-                pnum += 1
-                if len(parts) > 0:
-                    part = parts.pop(0)
-                else:
-                    break
+                self.extent(desc, ext.size)
+            pos = ext.offset + ext.size
 
-        if self.diskparts.is_gpt():
-            alt = self.diskparts.gpt_alternate_lba - self.gpt_entries_blocks()
-            if alt > pos:
-                self.extent(exts, alt - pos)
-            self.extent(exts, self.gpt_entries_blocks(), name = 'gpt_entries')
-            self.extent(exts, 1, name = 'gpt_alternate')
-        return str.join("\n", exts)
+        return str.join("\n", desc)
 
     def vmdk(self, wanted):
     	# Need something in DDB or VBox complains
