@@ -79,7 +79,7 @@ class Partitioning(object):
                 print p
 
     def parts(self):
-        parts = getattr(self, 'gpt_parts')
+        parts = getattr(self, 'gpt_parts', [])
         if not parts:
             parts = getattr(self, 'mbr_parts')
         return [p for p in parts if p.valid()]
@@ -112,7 +112,7 @@ class Partitioning(object):
                 self.gpt_alternate)
 
     def is_gpt(self):
-        return getattr(self, 'gpt_parts') != None
+        return getattr(self, 'gpt_parts', None)
 
     def mbr_activated(self, active = None):
         buf = MutableString(self.mbr)
@@ -176,7 +176,7 @@ class Partitioning(object):
         self.gpt_alternate = disk.read(Partitioning.BLOCK)
         return True
 
-    def __init__(self, diskpath):
+    def __init__(self, diskpath, options):
         disk = open(diskpath)
         try:
             self.mbr = disk.read(Partitioning.BLOCK)
@@ -184,7 +184,7 @@ class Partitioning(object):
                 raise FormatError()
 
             self.mbr_read(disk)
-            if not self.gpt_read(disk):
+            if options.mbr or not self.gpt_read(disk):
                 # Include small post-MBR bootloader space
                 self.post_mbr = None
                 if self.mbr_parts[0].offset < Partitioning.MAX_POST_MBR:
@@ -198,12 +198,12 @@ class PartitionedVMDK(object):
     class PartSpecError(Exception):
         pass
 
-    def __init__(self, diskpath, platform = None):
+    def __init__(self, diskpath, options):
         self.diskpath = os.path.realpath(diskpath)
-        self.platform = platform
-        if platform == None:
+        self.platform = options.platform
+        if self.platform == None:
             self.platform = sys.platform
-        self.diskparts = Partitioning(self.diskpath)
+        self.diskparts = Partitioning(self.diskpath, options)
         self.drop_privileges()
 
     def drop_privileges(self):
@@ -345,6 +345,8 @@ which should work in either VMWare or VirtualBox. The partitions to
 expose are specified by integers, starting at one; or by name.""")
     parser.add_option('-b', '--boot', metavar = 'PART', dest = "boot",
     	help = "Make this partition bootable")
+    parser.add_option('-m', '--mbr', dest = 'mbr', action = 'store_true',
+    	help = "Ignore any GPT partitioning")
     parser.add_option('-p', '--platform', dest = "platform",
     	help = "Target the given platform (darwin or linux)")
     parser.add_option('-v', '--verbose', dest = "verbose",
@@ -357,7 +359,7 @@ expose are specified by integers, starting at one; or by name.""")
     dest = os.path.normpath(args.pop(0))
     parts = args
 
-    vmdk = PartitionedVMDK(disk, platform = options.platform)
+    vmdk = PartitionedVMDK(disk, options)
     if options.verbose:
         vmdk.diskparts.dump()
     vmdk.write(dest, parts, active = options.boot, args = orig_args)
