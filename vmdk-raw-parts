@@ -92,8 +92,9 @@ class Partitioning(object):
         parts = self.parts()
         if self.is_gpt():
             yield ContentExtent(1, 1, 'gpt_header', self.gpt_header)
-            yield ContentExtent(2, self.gpt_entries_blocks(), 'gpt_entries',
-                self.gpt_entries())
+            entries_size = len(self.gpt_entries) / Partitioning.BLOCK
+            yield ContentExtent(2, entries_size, 'gpt_entries',
+                self.gpt_entries)
         elif self.post_mbr:
             yield ContentExtent(1, len(self.post_mbr) / Partitioning.BLOCK,
                 'post_mbr', self.post_mbr)
@@ -105,24 +106,10 @@ class Partitioning(object):
             yield PartExtent(part.offset, part.size, part.num)
 
         if self.is_gpt():
-            alt = self.gpt_alternate_lba - self.gpt_entries_blocks()
-            yield ContentExtent(alt, self.gpt_entries_blocks(), 'gpt_entries',
-                None)
+            yield ContentExtent(self.gpt_alternate_lba - entries_size,
+                entries_size, 'gpt_entries', None)
             yield ContentExtent(self.gpt_alternate_lba, 1, 'gpt_alternate',
                 self.gpt_alternate)
-
-    def gpt_entries(self):
-        # pad entries to blocksize
-        entries = str.join('', [p.data for p in self.gpt_parts])
-        entries = entries.ljust(self.gpt_entries_blocks() *
-            Partitioning.BLOCK)
-        return entries
-
-    def gpt_entries_blocks(self):
-        parts = self.gpt_parts
-        psize = len(parts[0].data)
-        size = psize * len(parts)
-        return int(math.ceil(size / float(Partitioning.BLOCK)))
 
     def is_gpt(self):
         return getattr(self, 'gpt_parts') != None
@@ -168,6 +155,27 @@ class Partitioning(object):
                 n += 1
             disk.seek(1)
 
+    def gpt_read(self, disk):
+        self.gpt_header = disk.read(Partitioning.BLOCK)
+        sig, vers, self.gpt_alternate_lba, first_usable, pcount, psize = \
+            struct.unpack_from('<8sL20xQQ32xLL', self.gpt_header)
+        if sig != Partitioning.GPT_SIGNATURE or \
+                vers != Partitioning.GPT_VERSION:
+            self.gpt_parts = None
+            return False
+
+        self.gpt_entries = disk.read((first_usable - 2) * Partitioning.BLOCK)
+        self.gpt_parts = []
+        for i in xrange(0, pcount):
+            part = Partitioning.GPTPart(i + 1,
+                self.gpt_entries[i * psize : (i + 1) * psize])
+            if part.valid():
+                self.gpt_parts.append(part)
+
+        disk.seek(self.gpt_alternate_lba * Partitioning.BLOCK)
+        self.gpt_alternate = disk.read(Partitioning.BLOCK)
+        return True
+
     def __init__(self, diskpath):
         disk = open(diskpath)
         try:
@@ -176,29 +184,13 @@ class Partitioning(object):
                 raise FormatError()
 
             self.mbr_read(disk)
-
-            self.gpt_parts = []
-            gpt_header = disk.read(Partitioning.BLOCK)
-            sig, vers, self.gpt_alternate_lba, pcount, psize = \
-                struct.unpack_from('<8sL20xQ40xLL', gpt_header)
-            if sig != Partitioning.GPT_SIGNATURE or \
-                    vers != Partitioning.GPT_VERSION:
-                self.gpt_parts = None
+            if not self.gpt_read(disk):
+                # Include small post-MBR bootloader space
                 self.post_mbr = None
                 if self.mbr_parts[0].offset < Partitioning.MAX_POST_MBR:
                     disk.seek(Partitioning.BLOCK)
                     self.post_mbr = disk.read((self.mbr_parts[0].offset - 1) *
                         Partitioning.BLOCK)
-                return
-
-            self.gpt_header = gpt_header
-            for i in xrange(0, pcount):
-                part = Partitioning.GPTPart(i + 1, disk.read(psize))
-                if part.valid():
-                    self.gpt_parts.append(part)
-
-            disk.seek(self.gpt_alternate_lba * Partitioning.BLOCK)
-            self.gpt_alternate = disk.read(Partitioning.BLOCK)
         finally:
             disk.close()
 
