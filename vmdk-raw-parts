@@ -118,7 +118,7 @@ class Partitioning(object):
         buf = MutableString(self.mbr)
         for i in xrange(0, 4):
             off = Partitioning.MBR_PARTS_OFFSET + 16 * i
-            buf[off] = struct.pack('B', 0x80 if i == active else 0)
+            buf[off] = struct.pack('B', 0x80 if i + 1 == active else 0)
         return str(buf)
 
     def mbr_raw(self, data):
