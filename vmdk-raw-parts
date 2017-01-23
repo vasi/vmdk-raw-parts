@@ -19,6 +19,7 @@ class Partitioning(object):
     GPT_SIGNATURE = "EFI PART"
     GPT_VERSION = 0x010000
     MBR_PARTS_OFFSET = 0x1be
+    MAX_POST_MBR = 4096
 
     class FormatError(Exception):
         pass
@@ -88,12 +89,16 @@ class Partitioning(object):
         PartExtent = namedtuple('PartExtent', 'offset size num')
 
         yield ContentExtent(0, 1, 'mbr', self.mbr)
+        parts = self.parts()
         if self.is_gpt():
             yield ContentExtent(1, 1, 'gpt_header', self.gpt_header)
             yield ContentExtent(2, self.gpt_entries_blocks(), 'gpt_entries',
                 self.gpt_entries())
+        elif self.post_mbr:
+            yield ContentExtent(1, len(self.post_mbr) / Partitioning.BLOCK,
+                'post_mbr', self.post_mbr)
 
-        for part in self.parts():
+        for part in parts:
             if getattr(part, 'ebr_offset', None):
                 yield ContentExtent(part.ebr_offset, 1, 'ebr' + str(part.num),
                     part.ebr_data)
@@ -156,7 +161,6 @@ class Partitioning(object):
 
                 parts[0].ebr(pos, data, n)
                 self.mbr_parts.append(parts[0])
-                print parts[0]
 
                 if parts[1].type == 0:
                     break
@@ -180,7 +184,13 @@ class Partitioning(object):
             if sig != Partitioning.GPT_SIGNATURE or \
                     vers != Partitioning.GPT_VERSION:
                 self.gpt_parts = None
+                self.post_mbr = None
+                if self.mbr_parts[0].offset < Partitioning.MAX_POST_MBR:
+                    disk.seek(Partitioning.BLOCK)
+                    self.post_mbr = disk.read((self.mbr_parts[0].offset - 1) *
+                        Partitioning.BLOCK)
                 return
+
             self.gpt_header = gpt_header
 
             self.gpt_parts = [Partitioning.GPTPart(i, disk.read(psize))
