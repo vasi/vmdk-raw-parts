@@ -18,10 +18,10 @@ class Partitioning(object):
     GPT_SIGNATURE = "EFI PART"
     GPT_VERSION = 0x010000
     MBR_PARTS_OFFSET = 0x1be
-    
+
     class FormatError(Exception):
         pass
-    
+
     class GPTPart(object):
         def __init__(self, num, data):
             self.num, self.data = num, data
@@ -30,21 +30,21 @@ class Partitioning(object):
             self.type = UUID(bytes_le = ptype)
             if not self.valid(): # unused
                 return
-            
+
             self.uuid = UUID(bytes_le = uuid)
             self.offset = start
             self.size = end - start + 1
             self.flags = flags
             # null terminated
             self.name = name.decode('utf_16_le').split("\0")[0]
-            
+
         def valid(self):
             return self.type.int != 0
         def __str__(self):
             return ('<GPTPart num=%(num)d name="%(name)s" type=%(type)s ' +
-                'uuid=%(uuid)s offset=%(offset)d size=%(size)d ' + 
+                'uuid=%(uuid)s offset=%(offset)d size=%(size)d ' +
                 'flags=%(flags)d>') % self.__dict__
-    
+
     class MBRPart(object):
         def __init__(self, num, data):
             self.num, self.data = num, data
@@ -60,41 +60,41 @@ class Partitioning(object):
             return ('<MBRPart num=%(num)d active=%(active)-5s ' +
                 'type=%(type)02x offset=%(offset)d size=%(size)d>'
                 ) % self.__dict__
-    
+
     def dump(self):
         for p in self.mbr_parts + self.gpt_parts:
             if p.valid():
                 print p
-    
+
     def parts(self):
         parts = getattr(self, 'gpt_parts')
         if not parts:
             parts = getattr(self, 'mbr_parts')
         return [p for p in parts if p.valid()]
-    
+
     def is_gpt(self):
         return getattr(self, 'gpt_parts') != None
-    
+
     def mbr_activated(self, active = None):
         buf = MutableString(self.mbr)
         for i in xrange(0, 4):
             off = Partitioning.MBR_PARTS_OFFSET + 16 * i
             buf[off] = struct.pack('B', 0x80 if i == active else 0)
         return str(buf)
-       
+
     def __init__(self, diskpath):
         disk = open(diskpath)
         try:
             self.mbr = disk.read(Partitioning.BLOCK)
             if self.mbr[510:512] != "\x55\xAA":
                 raise FormatError()
-            
+
             self.mbr_parts = []
             for i in xrange(0, 4):
                 off = Partitioning.MBR_PARTS_OFFSET + 16 * i
                 self.mbr_parts.append(Partitioning.MBRPart(i,
                     self.mbr[off:off+16]))
-            
+
             self.gpt_parts = []
             gpt_header = disk.read(Partitioning.BLOCK)
             sig, vers, self.gpt_alternate_lba, pcount, psize = \
@@ -104,10 +104,10 @@ class Partitioning(object):
                 self.gpt_parts = None
                 return
             self.gpt_header = gpt_header
-            
+
             self.gpt_parts = [Partitioning.GPTPart(i, disk.read(psize))
                 for i in xrange(0, pcount)]
-            
+
             disk.seek(self.gpt_alternate_lba * Partitioning.BLOCK)
             self.gpt_alternate = disk.read(Partitioning.BLOCK)
         finally:
@@ -116,15 +116,16 @@ class Partitioning(object):
 class PartitionedVMDK(object):
     class PartSpecError(Exception):
         pass
-    
+
     def __init__(self, diskpath, platform = None):
         self.diskpath = os.path.realpath(diskpath)
         self.platform = platform
         if platform == None:
             self.platform = sys.platform
         self.diskparts = Partitioning(self.diskpath)
+        self.diskparts.dump()
         self.drop_privileges()
-    
+
     def drop_privileges(self):
         if os.getuid() == 0:
             olduid = os.environ.get('SUDO_UID')
@@ -134,16 +135,16 @@ class PartitionedVMDK(object):
                 os.setgroups([])
                 os.setgid(oldgid)
                 os.setuid(olduid)
-    
+
     def writefile(self, dir, name, contents):
         f = open(os.path.join(dir, name), 'w')
         f.write(contents)
         f.close()
-    
+
     def write_script(self, dir, args):
         if args == None:
             return
-        
+
         script = "#!/bin/sh\ncd $parent\n$sudo $command $args\n"
         script = string.Template(script).substitute(
             parent = pipes.quote(os.path.realpath(os.path.dirname(dir))),
@@ -153,22 +154,22 @@ class PartitionedVMDK(object):
         name = 'regen.sh'
         self.writefile(dir, name, script)
         os.chmod(os.path.join(dir, name), 0770)
-    
+
     def write(self, dir, wantparts, active = None, args = None):
         wanted = self.wanted(wantparts)
         if active:
             active_gpt = self.find_part(active)
             active = [p for p in self.diskparts.mbr_parts
                 if p.offset == active_gpt.offset][0].num
-        
+
         try:
             os.mkdir(dir)
         except OSError as e:
             if e.errno != errno.EEXIST:
                 raise
-        
+
         self.writefile(dir, 'mbr', self.diskparts.mbr_activated(active))
-        
+
         if self.diskparts.is_gpt():
             self.writefile(dir, 'gpt_header', self.diskparts.gpt_header)
             self.writefile(dir, 'gpt_alternate', self.diskparts.gpt_alternate)
@@ -180,7 +181,7 @@ class PartitionedVMDK(object):
         base = os.path.basename(dir)
         self.writefile(dir, '%s.vmdk' % base, self.vmdk(wanted))
         self.write_script(dir, args)
-    
+
     def find_part(self, key):
         parts = self.diskparts.parts()
         try:
@@ -191,21 +192,21 @@ class PartitionedVMDK(object):
             if len(ps) != 1:
                 raise PartSpecError(key)
             return ps[0]
-    
+
     # return an ordered list of numbers of desired partitions
     def wanted(self, want):
         return sorted([self.find_part(w).num for w in want])
-    
+
     def gpt_entries_blocks(self):
         parts = self.diskparts.gpt_parts
         psize = len(parts[0].data)
         size = psize * len(parts)
         return int(math.ceil(size / float(Partitioning.BLOCK)))
-    
+
     def macpart(self, partnum):
         return re.sub(r'/r?disk(\d+)$', r'/disk\1s' + str(partnum),
             self.diskpath)
-    
+
     def extent(self, elist, size, partnum = None, offset = None, name = None):
         if name:
             spec = 'FLAT "%s" 0' % name
@@ -217,10 +218,10 @@ class PartitionedVMDK(object):
             spec = 'ZERO'
         ext = 'RW %d %s' % (size, spec)
         elist.append(ext)
-    
+
     def extents(self, wanted):
         parts = sorted(self.diskparts.parts(), key = lambda p: p.offset)
-        
+
         exts = []
         self.extent(exts, 1, name = 'mbr')
         pos = 1
@@ -228,7 +229,7 @@ class PartitionedVMDK(object):
             self.extent(exts, 1, name = 'gpt_header')
             self.extent(exts, self.gpt_entries_blocks(), name = 'gpt_entries')
             pos += 1 + self.gpt_entries_blocks()
-        
+
         pnum = 1
         part = parts.pop(0)
         while True:
@@ -246,7 +247,7 @@ class PartitionedVMDK(object):
                     part = parts.pop(0)
                 else:
                     break
-        
+
         if self.diskparts.is_gpt():
             alt = self.diskparts.gpt_alternate_lba - self.gpt_entries_blocks()
             if alt > pos:
@@ -254,7 +255,7 @@ class PartitionedVMDK(object):
             self.extent(exts, self.gpt_entries_blocks(), name = 'gpt_entries')
             self.extent(exts, 1, name = 'gpt_alternate')
         return str.join("\n", exts)
-    
+
     def vmdk(self, wanted):
     	# Need something in DDB or VBox complains
         template = """# Disk DescriptorFile
@@ -276,7 +277,7 @@ ddb.virtualHWVersion = "4"
             extents = extents)
 
 if __name__ == "__main__":
-    orig_args = sys.argv[1:]    
+    orig_args = sys.argv[1:]
     parser = OptionParser(
     	usage = 'Usage: %prog [options] DEVICE OUTPUT [PART1 ...]',
     	description =
@@ -298,6 +299,6 @@ expose are specified by integers, starting at one; or by name.""")
     disk = args.pop(0)
     dest = args.pop(0)
     parts = args
-    
+
     vmdk = PartitionedVMDK(disk, platform = options.platform)
     vmdk.write(dest, parts, active = options.boot, args = orig_args)
